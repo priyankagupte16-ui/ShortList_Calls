@@ -1,0 +1,20 @@
+{
+  "name": "bulk-screening-calls",
+  "version": "1.0.0",
+  "description": "Bulk hiring screening call manager for small businesses",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test-parse.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.9.0",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShortlistCalls</title>
+<style>
+:root{--bg:#f5f6fb;--card:#fff;--ink:#14142b;--muted:#5a5d7c;--brand:#2b2a8f;--line:#dcdeee;--ok:#117a50;--okbg:#dff5ea;--warn:#8a5a00;--warnbg:#fff0c7;--no:#a3302f;--nobg:#fde3e2}
+@media(prefers-color-scheme:dark){:root{--bg:#0e0e24;--card:#181838;--ink:#f0f0ff;--muted:#a9acd0;--brand:#8f8dff;--line:#2e2e57;--ok:#6fe0ae;--okbg:#12382b;--warn:#ffd16b;--warnbg:#3b2f0a;--no:#ff9b99;--nobg:#401a1a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+header b{font-size:1.15rem}main{max-width:900px;margin:0 auto;padding:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+h2,h3{margin:0 0 12px}label{display:block;font-weight:600;font-size:.9rem;margin-bottom:12px}
+input,select,textarea{width:100%;padding:10px 12px;margin-top:4px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+button{background:var(--brand);color:#fff;border:0;border-radius:10px;padding:10px 18px;font:600 1rem system-ui;cursor:pointer}
+button.alt{background:transparent;color:var(--ink);border:1.5px solid var(--line)}button.red{background:var(--no);color:#fff}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.muted{color:var(--muted)}.err{color:var(--no);font-weight:600;min-height:1.4em}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.stat{background:var(--bg);border-radius:10px;padding:10px;text-align:center}.stat b{display:block;font-size:1.5rem}
+.tabs{display:flex;gap:8px;margin-bottom:16px}.tabs button{background:transparent;color:var(--ink);border:1.5px solid var(--line)}.tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:.92rem}
+.tag{padding:2px 10px;border-radius:99px;font-weight:700;font-size:.8rem}.shortlist{background:var(--okbg);color:var(--ok)}.maybe,.no_answer{background:var(--warnbg);color:var(--warn)}.not_fit{background:var(--nobg);color:var(--no)}
+.q{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}.q p{margin:0 0 8px;font-weight:600}
+.phone{font-size:1.8rem;font-weight:800}.pointer{cursor:pointer}
+.vbox{border:1.5px dashed var(--brand);border-radius:12px;padding:12px;margin:12px 0}.vbox h4{margin:0 0 6px}
+.vlist{list-style:none;padding:0;margin:8px 0 0}.vlist li{padding:6px 0;border-bottom:1px solid var(--line);font-size:.92rem}.vlist .warn{color:var(--warn);font-weight:600}
+.vstatus{font-weight:700;min-height:1.5em}.vstatus.ok{color:var(--ok)}
+@media(max-width:600px){.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><b>📞 ShortlistCalls</b><span id="who"></span></header>
+<main id="app"></main>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let token = localStorage.getItem("token"), name = localStorage.getItem("name");
+
+async function api(path, method = "GET", body) {
+  const r = await fetch("/api" + path, { method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && token) { logout(); }
+  if (!r.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+function logout() { localStorage.clear(); token = name = null; render(); }
+function setSession(d) { token = d.token; name = d.name; localStorage.setItem("token", token); localStorage.setItem("name", name); render(); }
+
+function render() {
+  $("#who").innerHTML = token ? `${esc(name)} <button class="alt" id="lo">Log out</button>` : "";
+  if (token) $("#lo").onclick = logout;
+  const m = location.hash.match(/^#\/campaign\/(\d+)/);
+  if (!token) return authView();
+  m ? campaignView(+m[1]) : listView();
+}
+window.onhashchange = render;
+
+// ---------- auth ----------
+function authView(mode = "login") {
+  $("#app").innerHTML = `<div class="card" style="max-width:420px;margin:30px auto">
+    <h2>${mode === "login" ? "Log in" : "Create your account"}</h2>
+    ${mode === "register" ? '<label>Your name<input id="n"></label>' : ""}
+    <label>Email<input id="e" type="email"></label>
+    <label>Password<input id="p" type="password"></label>
+    <p class="err" id="err"></p>
+    <div class="row"><button id="go">${mode === "login" ? "Log in" : "Sign up"}</button>
+    <button class="alt" id="sw">${mode === "login" ? "New here? Sign up" : "Have an account? Log in"}</button></div></div>`;
+  $("#sw").onclick = () => authView(mode === "login" ? "register" : "login");
+  $("#go").onclick = async () => {
+    try { setSession(await api("/auth/" + mode, "POST", { name: $("#n")?.value, email: $("#e").value, password: $("#p").value })); }
+    catch (e) { $("#err").textContent = e.message; }
+  };
+}
+
+// ---------- campaign list ----------
+async function listView() {
+  const rows = await api("/campaigns");
+  $("#app").innerHTML = `<div class="card"><h2>New hiring campaign</h2>
+    <div class="g2"><label>Campaign title<input id="t" placeholder="Delivery riders – Pune, November"></label>
+    <label>Role<select id="r"><option>Delivery staff</option><option>Telecaller</option><option>Store helper</option><option>Other</option></select></label>
+    <label>Location<input id="l" placeholder="Kothrud, Pune"></label><label>Shift<input id="s" placeholder="9 am to 6 pm, 6 days"></label>
+    <label>Maximum monthly salary (₹)<input id="ms" type="number" value="15000"></label>
+    <label>Longest notice period (days)<input id="mn" type="number" value="15"></label></div>
+    <p class="err" id="err"></p><button id="add">Create campaign</button></div>
+    <h2>Your campaigns</h2>
+    ${rows.length ? rows.map((c) => `<div class="card pointer" data-id="${c.id}"><b>${esc(c.title)}</b>
+      <div class="muted">${esc(c.role)} · ${c.total} candidates · ${c.done || 0} screened · ${c.shortlisted || 0} shortlisted</div></div>`).join("") : '<p class="muted">No campaigns yet. Create one above.</p>'}`;
+  document.querySelectorAll("[data-id]").forEach((el) => (el.onclick = () => (location.hash = "#/campaign/" + el.dataset.id)));
+  $("#add").onclick = async () => {
+    try {
+      const r = await api("/campaigns", "POST", { title: $("#t").value, role: $("#r").value, location: $("#l").value, shift: $("#s").value, maxSalary: $("#ms").value, maxNoticeDays: $("#mn").value });
+      location.hash = "#/campaign/" + r.id;
+    } catch (e) { $("#err").textContent = e.message; }
+  };
+}
+
+// ---------- campaign detail ----------
+let tab = "upload";
+async function campaignView(id) {
+  const { campaign: c, stats: s } = await api("/campaigns/" + id);
+  $("#app").innerHTML = `<p><a href="#">← All campaigns</a></p>
+    <div class="card"><h2>${esc(c.title)}</h2><p class="muted">${esc(c.role)} · ${esc(c.location)} · ${esc(c.shift)} · up to ₹${c.max_salary} · notice ≤ ${c.max_notice_days} days</p>
+    <div class="stats">${[["Total", s.total], ["To call", s.pending], ["No answer", s.noAnswer], ["Screened", s.done], ["Shortlist", s.shortlist], ["Maybe", s.maybe]].map(([k, v]) => `<div class="stat"><b>${v || 0}</b>${k}</div>`).join("")}</div></div>
+    <div class="tabs">${["upload", "call", "report"].map((t) => `<button data-t="${t}" class="${t === tab ? "on" : ""}">${{ upload: "1. Add candidates", call: "2. Call console", report: "3. Shortlist" }[t]}</button>`).join("")}</div>
+    <div id="pane"></div>`;
+  document.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => { tab = b.dataset.t; campaignView(id); }));
+  ({ upload: uploadPane, call: callPane, report: reportPane })[tab](id, c);
+}
+
+function uploadPane(id) {
+  $("#pane").innerHTML = `<div class="card"><h3>Paste or upload candidates</h3>
+    <p class="muted">One per line: <code>name,phone</code>. Phone numbers must have 10 digits. Duplicates are skipped.</p>
+    <input type="file" id="f" accept=".csv,.txt"><textarea id="csv" rows="8" placeholder="Ramesh Kumar,9876543210"></textarea>
+    <p class="err" id="err"></p><div class="row"><button id="up">Add candidates</button><button class="red" id="del">Delete campaign</button></div></div>`;
+  $("#f").onchange = async (e) => ($("#csv").value = await e.target.files[0].text());
+  $("#up").onclick = async () => {
+    const r = await api(`/campaigns/${id}/candidates`, "POST", { csv: $("#csv").value });
+    $("#err").textContent = `Added ${r.added}, skipped ${r.skipped}.`; setTimeout(() => campaignView(id), 900);
+  };
+  $("#del").onclick = async () => { if (confirm("Delete this campaign and all its candidates?")) { await api("/campaigns/" + id, "DELETE"); location.hash = ""; } };
+}
+
+async function callPane(id, c) {
+  const { candidate: k } = await api(`/campaigns/${id}/next`);
+  if (!k) return ($("#pane").innerHTML = `<div class="card"><h3>All calls done</h3><p class="muted">No candidates left to call. Open the Shortlist tab.</p></div>`);
+  $("#pane").innerHTML = `<div class="card"><p class="muted">Attempt ${k.attempts + 1} of 3</p><h3>${esc(k.name || "Candidate")}</h3>
+    <a class="phone" href="tel:${esc(k.phone)}">${esc(k.phone)}</a>
+    <div class="vbox"><h4>🎙 Voice screening (Gnani AI)</h4>
+      <p class="muted" style="margin:0 0 8px">The app asks the five questions aloud and listens to the answers. Use it with the candidate on speaker, or let them speak into this device. You review the answers before saving.</p>
+      <div class="row"><select id="vl" style="width:auto"><option value="hi-IN">Hindi</option><option value="mr-IN">Marathi</option><option value="en-IN">English</option></select>
+      <button id="vgo">Start voice screening</button><button class="alt" id="vdone" style="display:none">Done answering</button><button class="alt" id="vstop" style="display:none">Cancel</button></div>
+      <p class="vstatus" id="vst"></p><ul class="vlist" id="vlist"></ul></div>
+    <p class="muted">Or call them yourself: greet them, say who you are calling for, then ask the five questions.</p>
+    <div class="q"><p>1. Are you still looking for a job?</p><select id="a1"><option value="1">Yes</option><option value="0">No</option></select></div>
+    <div class="q"><p>2. Can you work at ${esc(c.location || "our location")}, ${esc(c.shift || "this shift")}?</p><select id="a2"><option value="1">Yes</option><option value="0">No</option></select></div>
+    <div class="q"><p>3. What salary do you expect per month (₹)?</p><input id="a3" type="number" value="${c.max_salary}"></div>
+    <div class="q"><p>4. How many days until you can join?</p><input id="a4" type="number" value="0"></div>
+    <div class="q"><p>5. Tell me about your last job. How many years of experience?</p><input id="a5" type="number" step="0.5" value="0"></div>
+    <label>Notes<textarea id="nt" rows="2"></textarea></label><p class="err" id="err"></p>
+    <div class="row"><button id="save">Save and next</button><button class="alt" id="na">No answer</button></div></div>`;
+  const done = async (body) => { try { await api(`/candidates/${k.id}/result`, "POST", body); campaignView(id); } catch (e) { $("#err").textContent = e.message; } };
+  $("#save").onclick = () => done({ outcome: "answered", notes: $("#nt").value, answers: { looking: $("#a1").value === "1", shiftOk: $("#a2").value === "1", salary: $("#a3").value, noticeDays: $("#a4").value, experienceYears: $("#a5").value } });
+  $("#na").onclick = () => done({ outcome: "no_answer", notes: $("#nt").value });
+  setupVoice(c);
+}
+
+async function reportPane(id) {
+  const rows = await api(`/campaigns/${id}/report`);
+  $("#pane").innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h3>Ranked shortlist</h3><button id="dl">Download CSV</button></div>
+    ${rows.length ? `<div style="overflow-x:auto"><table><tr><th>Name</th><th>Phone</th><th>Result</th><th>Score</th><th>Salary</th><th>Notice</th><th>Exp</th><th>Notes</th></tr>
+    ${rows.map((r) => { const a = r.answers || {}; const v = r.verdict || r.status; return `<tr><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td><span class="tag ${esc(v)}">${esc(v.replace("_", " "))}</span></td><td>${r.score ?? ""}</td><td>${a.salary ?? ""}</td><td>${a.noticeDays ?? ""}</td><td>${a.experienceYears ?? ""}</td><td>${esc(r.notes)}</td></tr>`; }).join("")}</table></div>` : '<p class="muted">No calls recorded yet.</p>'}</div>`;
+  $("#dl").onclick = async () => {
+    const r = await fetch(`/api/campaigns/${id}/report.csv`, { headers: { Authorization: "Bearer " + token } });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = `shortlist-${id}.csv`; a.click();
+  };
+}
+
+// ---------- voice screening ----------
+const VQ = [
+  { key: "looking", id: "a1", say: { "hi-IN": () => "क्या आप अभी भी नौकरी ढूंढ रहे हैं?", "mr-IN": () => "तुम्ही अजूनही नोकरी शोधत आहात का?", "en-IN": () => "Are you still looking for a job?" } },
+  { key: "shiftOk", id: "a2", say: { "hi-IN": (c) => `क्या आप ${c.location || "हमारी जगह"}, ${c.shift || "इस शिफ्ट"} में काम कर सकते हैं?`, "mr-IN": (c) => `तुम्ही ${c.location || "आमच्या ठिकाणी"}, ${c.shift || "या शिफ्टमध्ये"} काम करू शकता का?`, "en-IN": (c) => `Can you work at ${c.location || "our location"}, ${c.shift || "this shift"}?` } },
+  { key: "salary", id: "a3", say: { "hi-IN": () => "आपको महीने की कितनी सैलरी चाहिए?", "mr-IN": () => "तुम्हाला महिन्याला किती पगार हवा आहे?", "en-IN": () => "What salary do you expect per month?" } },
+  { key: "noticeDays", id: "a4", say: { "hi-IN": () => "आप कितने दिन में जॉइन कर सकते हैं?", "mr-IN": () => "तुम्ही किती दिवसांत रुजू होऊ शकता?", "en-IN": () => "How many days until you can join?" } },
+  { key: "experienceYears", id: "a5", say: { "hi-IN": () => "आपको पिछली नौकरी में कितने साल का अनुभव है?", "mr-IN": () => "तुमच्या मागील नोकरीचा किती वर्षांचा अनुभव आहे?", "en-IN": () => "How many years of experience do you have from your last job?" } },
+];
+const VQ_LABEL = { looking: "Still looking", shiftOk: "Location and shift OK", salary: "Expected salary", noticeDays: "Notice days", experienceYears: "Experience years" };
+
+async function voiceFetch(path, opts = {}) {
+  const r = await fetch("/api/voice" + path, { ...opts, headers: { Authorization: "Bearer " + token, ...(opts.headers || {}) } });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Voice request failed");
+  return r;
+}
+function playBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const a = new Audio(URL.createObjectURL(blob));
+    a.onended = resolve; a.onerror = () => reject(new Error("Could not play the audio")); a.play().catch(reject);
+  });
+}
+// Records the microphone and returns a 16 kHz mono 16-bit WAV (the format Gnani accepts, max 30 s).
+async function startRecording() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
+  proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(proc); proc.connect(ctx.destination);
+  return { stop() {
+    proc.disconnect(); src.disconnect(); stream.getTracks().forEach((t) => t.stop()); const rate = ctx.sampleRate; ctx.close();
+    return encodeWav(chunks, rate);
+  } };
+}
+function encodeWav(chunks, rate) {
+  const len = chunks.reduce((n, c) => n + c.length, 0), all = new Float32Array(len);
+  let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  const target = 16000, ratio = rate / target, n = Math.floor(len / ratio), pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio)); let sum = 0;
+    for (let j = a; j < b && j < len; j++) sum += all[j];
+    pcm[i] = Math.max(-1, Math.min(1, sum / (b - a))) * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), w = (off, s) => [...s].forEach((ch, i) => v.setUint8(off + i, ch.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, target, true); v.setUint32(28, target * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+  new Int16Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function setupVoice(c) {
+  let enabled = false;
+  try { enabled = (await (await voiceFetch("/status")).json()).enabled; } catch {}
+  const st = (m, cls) => { $("#vst").textContent = m; $("#vst").className = "vstatus " + (cls || ""); };
+  if (!enabled) { $("#vgo").disabled = true; return st("Voice screening is off. Set GNANI_API_KEY on the server to turn it on."); }
+  let cancelled = false, finishAnswer = null;
+  $("#vstop").onclick = () => { cancelled = true; if (finishAnswer) finishAnswer(); };
+  $("#vdone").onclick = () => finishAnswer && finishAnswer();
+  $("#vgo").onclick = async () => {
+    const lang = $("#vl").value, lines = [];
+    cancelled = false; $("#vlist").innerHTML = ""; $("#vgo").style.display = "none"; $("#vstop").style.display = ""; $("#vl").disabled = true;
+    try {
+      for (let i = 0; i < VQ.length && !cancelled; i++) {
+        const q = VQ[i];
+        st(`Question ${i + 1} of 5: asking…`);
+        await playBlob(await (await voiceFetch("/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: q.say[lang](c), lang }) })).blob());
+        if (cancelled) break;
+        st(`Question ${i + 1} of 5: listening. Tap "Done answering" when finished.`);
+        const rec = await startRecording();
+        $("#vdone").style.display = "";
+        await new Promise((res) => { finishAnswer = res; setTimeout(res, 25000); });
+        finishAnswer = null; $("#vdone").style.display = "none";
+        const wav = rec.stop();
+        if (cancelled) break;
+        st(`Question ${i + 1} of 5: understanding the answer…`);
+        const r = await (await voiceFetch(`/answer?q=${q.key}&lang=${lang}`, { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav })).json();
+        const el = $("#" + q.id);
+        if (r.understood) el.value = typeof r.value === "boolean" ? (r.value ? "1" : "0") : r.value;
+        lines.push(`${VQ_LABEL[q.key]}: "${r.transcript || "(no speech)"}"`);
+        $("#vlist").insertAdjacentHTML("beforeend", `<li><b>${i + 1}. ${esc(VQ_LABEL[q.key])}</b>: heard "${esc(r.transcript || "nothing")}" ${r.understood ? "→ <b>" + esc(typeof r.value === "boolean" ? (r.value ? "Yes" : "No") : r.value) + "</b>" : '<span class="warn">→ could not read this, please check the field below</span>'}</li>`);
+      }
+      if (!cancelled) { $("#nt").value = ("Voice screening. " + lines.join(" | ") + ($("#nt").value ? "\n" + $("#nt").value : "")); st("Done. Check the answers below, then press Save and next.", "ok"); }
+      else st("Voice screening cancelled.");
+    } catch (e) { st(e.message || "Something went wrong with voice screening", "err"); }
+    $("#vgo").style.display = ""; $("#vgo").textContent = "Run again"; $("#vstop").style.display = "none"; $("#vdone").style.display = "none"; $("#vl").disabled = false;
+  };
+}
+render();
+</script>
+</body>
+</html>
